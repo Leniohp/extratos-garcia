@@ -1,0 +1,21 @@
+name: Manter Supabase Ativo
+
+# roda automaticamente a cada 3 dias (e permite rodar manualmente pelo botão)
+on:
+  schedule:
+    - cron: "0 9 */3 * *"   # às 9h UTC, a cada 3 dias
+  workflow_dispatch:         # botão para rodar na hora, se quiser testar
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bater no banco para mantê-lo ativo
+        run: |
+          curl -s -X PATCH \
+            "https://rgvqzxbprnxffjkgmman.supabase.co/rest/v1/keep_alive?id=eq.1" \
+            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"ultima_batida\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+          echo "Batida enviada ao Supabase em $(date -u)"
