@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Controle de Extratos — Grupo Garcia</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root{
     --bg:#0f1419; --panel:#1a2230; --panel2:#222d3d; --ink:#e8edf4;
@@ -102,6 +103,7 @@
     <label style="color:var(--muted);font-size:13px">Período:</label>
     <select id="anoSel" onchange="render()"></select>
     <button onclick="exportCSV()">Exportar status (CSV)</button>
+    <button onclick="openDownload()">Baixar PDFs do mês</button>
     <button id="adminBtn" class="adminbtn" style="display:none" onclick="openAdmin()">Gerenciar usuários</button>
     <div class="legend">
       <span><span class="dot ok"></span>Enviado</span>
@@ -125,6 +127,20 @@
       </div>
       <h4 style="margin:20px 0 6px">Histórico de envios</h4>
       <div id="logList"><div style="color:var(--muted);font-size:13px">Nenhum envio ainda.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DOWNLOAD -->
+<div class="modal" id="downloadModal">
+  <div class="card">
+    <h3><span class="close" onclick="closeDownload()">×</span>Baixar PDFs do mês</h3>
+    <div class="body">
+      <p style="color:var(--muted);font-size:13px;margin-top:0">Escolha o mês e ano. O sistema vai juntar todos os PDFs enviados naquele período num único arquivo ZIP para você baixar.</p>
+      <label style="font-size:13px;color:var(--muted)">Mês/Ano</label>
+      <select id="dlMes" style="width:100%;margin:8px 0 16px"></select>
+      <button class="primary" id="dlBtn" onclick="baixarMes()" style="width:100%;padding:11px">Gerar e baixar ZIP</button>
+      <div class="msg" id="dlMsg" style="margin-top:14px"></div>
     </div>
   </div>
 </div>
@@ -369,6 +385,59 @@ function exportCSV(){
 
 let toastT;
 function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.style.display="block";clearTimeout(toastT);toastT=setTimeout(()=>t.style.display="none",4000);}
+
+/* ====== DOWNLOAD DOS PDFs DO MÊS ====== */
+function openDownload(){
+  // preenche o seletor de meses
+  dlMes.innerHTML="";
+  MESES_SEQ.forEach((ms,idx)=>{
+    dlMes.innerHTML+=`<option value="${idx}">${ms.nome}/${String(ms.ano).slice(2)}</option>`;
+  });
+  dlMsg.className="msg";
+  downloadModal.classList.add("on");
+}
+function closeDownload(){downloadModal.classList.remove("on");}
+
+async function baixarMes(){
+  const ms = MESES_SEQ[+dlMes.value];
+  dlBtn.disabled=true;
+  dlMsg.className="msg ok"; dlMsg.textContent="Procurando extratos do período...";
+  try{
+    // junta todos os PDFs daquele mês (de todas as contas)
+    const arquivos=[];
+    for(let i=0;i<CONTAS.length;i++){
+      const s = statusCache[ckey(i,ms)];
+      if(s && s.path){
+        const c=CONTAS[i];
+        // nome amigável dentro do ZIP
+        const nomeConta = `${c.tit} - ${c.banco} ${c.conta}`.replace(/[\/\\:*?"<>|]/g,"-");
+        arquivos.push({path:s.path, nome:`${nomeConta}.pdf`});
+      }
+    }
+    if(arquivos.length===0){
+      dlMsg.className="msg err"; dlMsg.textContent="Nenhum extrato enviado neste mês ainda.";
+      dlBtn.disabled=false; return;
+    }
+    dlMsg.className="msg ok"; dlMsg.textContent=`Baixando ${arquivos.length} extrato(s) e montando o ZIP...`;
+    const zip = new JSZip();
+    for(const arq of arquivos){
+      // baixa o conteúdo do PDF do bucket privado
+      const {data,error}=await sb.storage.from("extratos").download(arq.path);
+      if(error) throw error;
+      zip.file(arq.nome, data);
+    }
+    const blob = await zip.generateAsync({type:"blob"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=`extratos_${ms.nome}_${ms.ano}.zip`;
+    a.click();
+    dlMsg.className="msg ok"; dlMsg.textContent=`Pronto! ZIP com ${arquivos.length} extrato(s) baixado.`;
+  }catch(e){
+    dlMsg.className="msg err"; dlMsg.textContent="Erro ao gerar o ZIP: "+e.message;
+    console.error(e);
+  }
+  dlBtn.disabled=false;
+}
 
 checkSession();
 </script>
