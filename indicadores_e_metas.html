@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indicadores e Metas — Bacuri</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --card:#ffffff; --surface:#f1efe8; --border:#e3e1d8;
+    --txt:#26211c; --txt2:#6b6860; --txt3:#9a978d;
+    --azul:#378ADD; --azul-bg:#E6F1FB; --azul-txt:#0C447C;
+    --verde:#1D9E75; --verde-txt:#0F6E56;
+    --amber:#BA7517; --vermelho:#E24B4A;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--txt); line-height:1.5; padding:24px 16px;}
+  .wrap{max-width:880px; margin:0 auto;}
+  h1{font-size:22px; font-weight:600; margin-bottom:4px;}
+  .sub{font-size:13px; color:var(--txt2); margin-bottom:20px;}
+  .barra{display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface); border-radius:8px; padding:12px 14px; margin-bottom:20px;}
+  .barra label{font-size:13px; color:var(--txt2);}
+  select,input[type=date]{font-size:14px; padding:7px 10px; border:0.5px solid var(--border); border-radius:6px; background:var(--card); color:var(--txt);}
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:24px;}
+  .card{background:var(--surface); border-radius:8px; padding:16px;}
+  .card .lbl{font-size:13px; color:var(--txt2); margin-bottom:6px;}
+  .card .val{font-size:24px; font-weight:600;}
+  .card .val.verde{color:var(--verde-txt);}
+  .card .meta{font-size:13px; color:var(--txt3); font-weight:400;}
+  .sec{background:var(--card); border:0.5px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:20px;}
+  .sec h2{font-size:16px; font-weight:600; margin-bottom:14px;}
+  .rk-row{display:flex; align-items:center; gap:12px; margin-top:10px;}
+  .rk-row:first-child{margin-top:0;}
+  .rk-nome{width:100px; font-size:14px; font-weight:500;}
+  .rk-bar{flex:1; background:var(--surface); border-radius:6px; height:22px; position:relative; overflow:hidden;}
+  .rk-fill{background:var(--verde); height:100%; border-radius:6px;}
+  .rk-val{width:160px; text-align:right; font-size:13px; color:var(--txt2);}
+  canvas{max-width:100%;}
+  .msg{padding:40px; text-align:center; color:var(--txt2); font-size:14px;}
+  .erro{color:var(--vermelho);}
+  table{width:100%; border-collapse:collapse; font-size:13px; margin-top:6px;}
+  th,td{padding:8px 6px; text-align:right; border-bottom:0.5px solid var(--border);}
+  th:first-child,td:first-child{text-align:left;}
+  th{color:var(--txt2); font-weight:500; font-size:12px;}
+  .pos{color:var(--verde-txt);}
+  @media(prefers-color-scheme:dark){
+    :root{--bg:#1a1a18; --card:#242422; --surface:#2c2c2a; --border:#3a3a37; --txt:#f1efe8; --txt2:#b4b2a9; --txt3:#888780; --azul-bg:#0C447C; --azul-txt:#B5D4F4; --verde-txt:#5DCAA5;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Indicadores e Metas</h1>
+  <div class="sub">Bacuri Frutas · dados ao vivo do Supabase</div>
+
+  <div class="barra">
+    <i></i>
+    <label>Período:</label>
+    <select id="modo">
+      <option value="mes">Mês específico</option>
+      <option value="ano">Ano acumulado</option>
+      <option value="intervalo">Período personalizado</option>
+    </select>
+    <span id="campos-mes">
+      <select id="mes"></select>
+      <select id="ano"></select>
+    </span>
+    <span id="campos-ano" style="display:none;">
+      <select id="ano2"></select>
+    </span>
+    <span id="campos-intervalo" style="display:none; gap:6px; align-items:center;">
+      <select id="de"></select>
+      <span style="color:var(--txt2); font-size:13px;">até</span>
+      <select id="ate"></select>
+    </span>
+  </div>
+
+  <div id="conteudo"><div class="msg">Carregando indicadores…</div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const SUPABASE_URL = "https://idwybfqkutplksszdvpf.supabase.co";
+const SUPABASE_KEY = "sb_publishable_BVToWA_Rjtk1JGYXvXidlg_vcSVfHYX";
+const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const MESES_LONGO = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+let resumo = [], sabor = [];
+let chartEv = null;
+
+const brl = v => "R$ " + (Math.round(v)).toLocaleString("pt-BR");
+const num = v => (Math.round(v)).toLocaleString("pt-BR");
+
+async function sb(tabela){
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${tabela}?select=*`, {
+    headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY }
+  });
+  if(!r.ok) throw new Error(`${tabela}: HTTP ${r.status} — ${await r.text()}`);
+  return r.json();
+}
+
+async function carregar(){
+  try{
+    [resumo, sabor] = await Promise.all([sb("indicadores_resumo"), sb("indicadores_sabor")]);
+    if(!resumo.length){ document.getElementById("conteudo").innerHTML = '<div class="msg">As tabelas estão vazias. Rode a carga do robô primeiro.</div>'; return; }
+    montarSeletores();
+    render();
+  }catch(e){
+    document.getElementById("conteudo").innerHTML = `<div class="msg erro">Erro ao ler o Supabase:<br>${e.message}</div>`;
+  }
+}
+
+function periodos(){
+  // lista de (ano,mes) presentes, ordenada
+  return resumo.map(r=>({ano:r.ano, mes:r.mes})).sort((a,b)=> a.ano-b.ano || a.mes-b.mes);
+}
+
+function montarSeletores(){
+  const ps = periodos();
+  const anos = [...new Set(ps.map(p=>p.ano))].sort();
+  const ultimo = ps[ps.length-1];
+
+  // mês + ano
+  const selMes = document.getElementById("mes"), selAno = document.getElementById("ano");
+  const mesesDoUltimoAno = ps.filter(p=>p.ano===ultimo.ano).map(p=>p.mes);
+  selMes.innerHTML = mesesDoUltimoAno.map(m=>`<option value="${m}" ${m===ultimo.mes?"selected":""}>${MESES_LONGO[m-1]}</option>`).join("");
+  selAno.innerHTML = anos.map(a=>`<option value="${a}" ${a===ultimo.ano?"selected":""}>${a}</option>`).join("");
+
+  // ano acumulado
+  document.getElementById("ano2").innerHTML = anos.map(a=>`<option value="${a}" ${a===ultimo.ano?"selected":""}>${a}</option>`).join("");
+
+  // intervalo (lista de meses como AAAA-MM)
+  const opts = ps.map(p=>`<option value="${p.ano}-${p.mes}">${MESES[p.mes-1]}/${p.ano}</option>`).join("");
+  const de = document.getElementById("de"), ate = document.getElementById("ate");
+  de.innerHTML = opts; ate.innerHTML = opts;
+  de.value = `${ps[0].ano}-${ps[0].mes}`;
+  ate.value = `${ultimo.ano}-${ultimo.mes}`;
+
+  ["modo","mes","ano","ano2","de","ate"].forEach(id=>document.getElementById(id).addEventListener("change", onChange));
+}
+
+function onChange(){
+  const modo = document.getElementById("modo").value;
+  document.getElementById("campos-mes").style.display = modo==="mes" ? "" : "none";
+  document.getElementById("campos-ano").style.display = modo==="ano" ? "" : "none";
+  document.getElementById("campos-intervalo").style.display = modo==="intervalo" ? "inline-flex" : "none";
+  render();
+}
+
+function filtro(){
+  const modo = document.getElementById("modo").value;
+  if(modo==="mes"){
+    const a=+document.getElementById("ano").value, m=+document.getElementById("mes").value;
+    return (r)=> r.ano===a && r.mes===m;
+  }
+  if(modo==="ano"){
+    const a=+document.getElementById("ano2").value;
+    return (r)=> r.ano===a;
+  }
+  const [da,dm] = document.getElementById("de").value.split("-").map(Number);
+  const [aa,am] = document.getElementById("ate").value.split("-").map(Number);
+  const ini = da*100+dm, fim = aa*100+am;
+  return (r)=> { const k=r.ano*100+r.mes; return k>=ini && k<=fim; };
+}
+
+function render(){
+  const f = filtro();
+  const res = resumo.filter(f);
+  const sab = sabor.filter(f);
+
+  // ---- agregados de resumo ----
+  const venda = res.reduce((s,r)=>s+(+r.venda_total||0),0);
+  const lucro = res.reduce((s,r)=>s+(+r.lucro_total||0),0);
+  const litros = res.reduce((s,r)=>s+(+r.litros_total||0),0);
+  const meta = res.length ? (+res[0].meta_litros_dia||300) : 300;
+  // média litros/dia: média ponderada das médias mensais é frágil; usamos média das médias informadas
+  const mediaDia = res.length ? res.reduce((s,r)=>s+(+r.media_litros_dia||0),0)/res.length : 0;
+  const margem = venda ? (lucro/venda*100) : 0;
+
+  // ---- ranking por sabor ----
+  const porSabor = {};
+  sab.forEach(r=>{
+    const k=r.sabor;
+    if(!porSabor[k]) porSabor[k]={venda:0,litros:0,lucro:0};
+    porSabor[k].venda += +r.venda_total||0;
+    porSabor[k].litros += +r.litros||0;
+    porSabor[k].lucro  += +r.lucro_total||0;
+  });
+  const rank = Object.entries(porSabor).map(([s,d])=>({sabor:s,...d})).sort((a,b)=>b.venda-a.venda);
+
+  // ---- evolução mensal (sempre o ano inteiro do período em foco) ----
+  const anosFoco = [...new Set(res.map(r=>r.ano))];
+  const evMeses = resumo.filter(r=>anosFoco.includes(r.ano)).sort((a,b)=> a.ano-b.ano||a.mes-b.mes);
+
+  const html = `
+    <div class="cards">
+      <div class="card"><div class="lbl">Venda total</div><div class="val">${brl(venda)}</div></div>
+      <div class="card"><div class="lbl">Lucro bruto</div><div class="val verde">${brl(lucro)}</div></div>
+      <div class="card"><div class="lbl">Litros</div><div class="val">${num(litros)}</div></div>
+      <div class="card"><div class="lbl">Média litros/dia</div><div class="val">${num(mediaDia)} <span class="meta">/ meta ${num(meta)}</span></div></div>
+    </div>
+
+    <div class="sec">
+      <h2>Ranking de sabores</h2>
+      <div id="rk">${rank.length ? rank.map((r,i)=>{
+        const max = rank[0].venda || 1;
+        return `<div class="rk-row">
+          <div class="rk-nome">${r.sabor}</div>
+          <div class="rk-bar"><div class="rk-fill" style="width:${Math.round(r.venda/max*100)}%"></div></div>
+          <div class="rk-val">${brl(r.venda)} · ${num(r.litros)}L</div>
+        </div>`;
+      }).join("") : '<div class="msg">Sem dados de sabor neste período.</div>'}</div>
+    </div>
+
+    <div class="sec">
+      <h2>Margem por sabor</h2>
+      <table>
+        <thead><tr><th>Sabor</th><th>Venda</th><th>Lucro</th><th>Margem</th><th>Litros</th></tr></thead>
+        <tbody>${rank.map(r=>`<tr>
+          <td>${r.sabor}</td><td>${brl(r.venda)}</td><td class="pos">${brl(r.lucro)}</td>
+          <td>${r.venda?Math.round(r.lucro/r.venda*100):0}%</td><td>${num(r.litros)}</td>
+        </tr>`).join("")}
+        <tr style="font-weight:600;"><td>Total</td><td>${brl(venda)}</td><td class="pos">${brl(lucro)}</td><td>${Math.round(margem)}%</td><td>${num(litros)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sec">
+      <h2>Evolução mensal — ${anosFoco.join(", ")}</h2>
+      <div style="position:relative; width:100%; height:260px;">
+        <canvas id="ev" role="img" aria-label="Gráfico de venda e lucro por mês"></canvas>
+      </div>
+    </div>
+  `;
+  document.getElementById("conteudo").innerHTML = html;
+
+  // gráfico
+  const ctx = document.getElementById("ev");
+  if(chartEv) chartEv.destroy();
+  chartEv = new Chart(ctx, {
+    type:"bar",
+    data:{
+      labels: evMeses.map(r=>`${MESES[r.mes-1]}/${String(r.ano).slice(2)}`),
+      datasets:[
+        {label:"Venda", data:evMeses.map(r=>+r.venda_total||0), backgroundColor:"#378ADD", borderRadius:4},
+        {label:"Lucro", data:evMeses.map(r=>+r.lucro_total||0), backgroundColor:"#1D9E75", borderRadius:4}
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:"top", labels:{boxWidth:12, font:{size:12}}}},
+      scales:{ x:{ticks:{autoSkip:false}}, y:{ticks:{callback:v=>"R$ "+(v/1000)+"k"}} }
+    }
+  });
+}
+
+carregar();
+</script>
+</body>
+</html>
