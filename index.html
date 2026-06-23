@@ -25,6 +25,7 @@
   .legend{display:flex;gap:16px;color:var(--muted);font-size:13px;margin-left:auto;align-items:center}
   .dot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
   .dot.ok{background:var(--ok)} .dot.pen{background:var(--pending-ink)}
+  .dot.lancado{background:#2f7fc4} .dot.sem_movimento{background:#6aa9dd}
   .wrap{padding:22px 32px 60px;overflow-x:auto}
   table{border-collapse:separate;border-spacing:0;width:100%;min-width:1500px;font-family:Arial,sans-serif}
   th,td{border-bottom:1px solid var(--line);padding:0;text-align:center;font-size:13px}
@@ -36,9 +37,13 @@
   td.cell{width:64px;height:50px;cursor:pointer;position:relative;transition:.15s;border-left:1px solid var(--line)}
   td.cell:hover{outline:2px solid var(--accent);outline-offset:-2px}
   td.cell.ok{background:var(--ok-bg)}
+  td.cell.st-lancado{background:#143049}
+  td.cell.st-sem_movimento{background:#1d3a52}
   td.cell.drag{outline:2px dashed var(--accent);outline-offset:-2px;background:#2a2410}
   .badge{font-size:11px;font-weight:bold}
   .badge.ok{color:#4fd17e}
+  .badge.st-lancado{color:#5fb3f0}
+  .badge.st-sem_movimento{color:#8cc8f5}
   .badge.pen{color:var(--pending-ink)}
   .fname{display:block;font-size:9px;color:var(--muted);max-width:58px;margin:2px auto 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50;font-family:Arial,sans-serif}
@@ -105,6 +110,8 @@
     <button onclick="openDownload()">Baixar PDFs do mês</button>
     <div class="legend">
       <span><span class="dot ok"></span>Enviado</span>
+      <span><span class="dot lancado"></span>Lançado</span>
+      <span><span class="dot sem_movimento"></span>Sem movimento</span>
       <span><span class="dot pen"></span>Pendente</span>
       <span class="pill" id="whoami"></span>
       <button onclick="logout()" style="padding:6px 12px">Sair</button>
@@ -149,11 +156,12 @@
 const SUPABASE_URL = "https://rgvqzxbprnxffjkgmman.supabase.co";
 const SUPABASE_KEY = "sb_publishable_YzL3o_4epetSEsJxgIYRgQ_qsw8piEB";
 const ADMIN_EMAIL  = "adm@maximagestao.com";
+const CONTABILIDADE = ["fiscal@maximagestao.com", "adm@maximagestao.com"];
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const CONTAS = [
   {tit:"Alice Lacerda Silva Garcia", banco:"Sicredi", ag:"3950", conta:"65985-1"},
-  {tit:"Alice Lacerda Silva Garcia", banco:"Sicredi", ag:"3950", conta:"65934-7"},
+  {tit:"Suely A Araujo Pereira", banco:"Sicredi", ag:"3950", conta:"65934-7"},
   {tit:"Cairo Garcia Pereira", banco:"Sicredi", ag:"3950", conta:"65849-9"},
   {tit:"Cairo Garcia Pereira", banco:"Banco do Brasil", ag:"376-x", conta:"23292-0"},
   {tit:"Alice Lacerda Silva Garcia", banco:"Banco do Brasil", ag:"0376-x", conta:"73152-8"},
@@ -174,7 +182,7 @@ const MESES_SEQ = [];
   }
 })();
 
-let atual=null, statusCache={}, sessionUser=null, isAdmin=false;
+let atual=null, statusCache={}, sessionUser=null, isAdmin=false, podeContabilidade=false;
 
 function mcol(ms){return `${ms.nome}-${ms.ano}`;}
 function ckey(idx,ms){return `${idx}__${ms.nome}__${ms.ano}`;}
@@ -221,6 +229,7 @@ async function checkSession(){
   if(!session){showAuth();return;}
   sessionUser=session.user;
   isAdmin = sessionUser.email===ADMIN_EMAIL;
+  podeContabilidade = CONTABILIDADE.includes((sessionUser.email||"").toLowerCase());
   // verifica aprovação
   const {data:perfil}=await sb.from("perfis").select("status").eq("id",sessionUser.id).maybeSingle();
   const status = perfil?perfil.status:"pendente";
@@ -259,7 +268,7 @@ async function loadStatus(){
   try{
     const {data,error}=await sb.from("extratos").select("*");
     if(error)throw error;
-    (data||[]).forEach(r=>{statusCache[r.cell_key]={path:r.file_path,filename:r.filename,by:r.enviado_por,at:r.created_at};});
+    (data||[]).forEach(r=>{statusCache[r.cell_key]={path:r.file_path,filename:r.filename,by:r.enviado_por,at:r.created_at,status:r.status||"enviado"};});
   }catch(e){toast("Erro ao carregar: "+e.message);console.error(e);}
 }
 function buildPeriodSelect(){anoSel.innerHTML='<option value="0">abr/25 – dez/26</option>';}
@@ -273,9 +282,13 @@ async function render(){
     html+=`<tr><td class="tit"><span class="nome">${c.tit}</span><br><span class="meta">${c.banco} · Ag ${c.ag} · CC ${c.conta}</span></td>`;
     MESES_SEQ.forEach(ms=>{
       const k=ckey(i,ms), s=statusCache[k];
-      html+= s
-        ? `<td class="cell ok" data-k="${k}" data-i="${i}" data-mn="${ms.nome}" data-ma="${ms.ano}"><span class="badge ok">✓</span><span class="fname">${s.filename||""}</span></td>`
-        : `<td class="cell" data-k="${k}" data-i="${i}" data-mn="${ms.nome}" data-ma="${ms.ano}"><span class="badge pen">—</span></td>`;
+      if(s){
+        const st = s.status||"enviado";
+        const cls = st==="lancado" ? "st-lancado" : st==="sem_movimento" ? "st-sem_movimento" : "ok";
+        html+= `<td class="cell ${cls}" data-k="${k}" data-i="${i}" data-mn="${ms.nome}" data-ma="${ms.ano}"><span class="badge ${cls}">✓</span><span class="fname">${s.filename||""}</span></td>`;
+      }else{
+        html+= `<td class="cell" data-k="${k}" data-i="${i}" data-mn="${ms.nome}" data-ma="${ms.ano}"><span class="badge pen">—</span></td>`;
+      }
     });
     html+=`</tr>`;
   });
@@ -300,12 +313,50 @@ function openCell(td){
 }
 function closeModal(){modal.classList.remove("on");}
 
+function abrirSeletorStatus(){
+  const box=document.getElementById("statusBox");
+  if(box)box.style.display = box.style.display==="none" ? "block" : "none";
+}
+async function definirStatus(novo){
+  if(!podeContabilidade){toast("Sem permissão.");return;}
+  try{
+    const {error}=await sb.from("extratos").update({status:novo}).eq("cell_key",atual.key);
+    if(error)throw error;
+    if(statusCache[atual.key])statusCache[atual.key].status=novo;
+    const txt = novo==="lancado"?"Lançado":novo==="sem_movimento"?"Sem movimento":"Enviado";
+    toast("Status alterado para: "+txt);
+    await render();renderLog();
+  }catch(e){toast("Erro ao alterar status: "+e.message);console.error(e);}
+}
+
 async function renderLog(){
   const s=statusCache[atual.key];
   if(s){
     const {data}=await sb.storage.from("extratos").createSignedUrl(s.path,3600);
     const url=data?data.signedUrl:"#";
-    logList.innerHTML=`<div class="logitem"><span>📄 <a href="${url}" target="_blank">${s.filename}</a></span><span style="color:var(--muted)">${new Date(s.at).toLocaleString('pt-BR')}<br>${s.by||""}</span></div><div class="row"><button onclick="removerExtrato()" style="border-color:#7a3a3a;color:#e06464">Remover este extrato</button></div>`;
+    const st = s.status||"enviado";
+    const stTxt = st==="lancado"?"Lançado":st==="sem_movimento"?"Sem movimento":"Enviado";
+    const stCor = st==="lancado"?"#5fb3f0":st==="sem_movimento"?"#8cc8f5":"#4fd17e";
+    const btnStatus = podeContabilidade
+      ? `<button onclick="abrirSeletorStatus()" style="border-color:#2f7fc4;color:#7fc1ef">Alterar status</button>`
+      : "";
+    const seletor = podeContabilidade
+      ? `<div id="statusBox" style="display:none;margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+           <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Marcar este extrato como:</div>
+           <div style="display:flex;flex-direction:column;gap:8px">
+             <button class="stopt" onclick="definirStatus('enviado')" style="text-align:left;border-color:#2c5a36;color:#9fd9a5">● Enviado</button>
+             <button class="stopt" onclick="definirStatus('lancado')" style="text-align:left;border-color:#2f5a7a;color:#7fc1ef">● Lançado (conferido, com movimento)</button>
+             <button class="stopt" onclick="definirStatus('sem_movimento')" style="text-align:left;border-color:#3a6285;color:#a8cdee">● Sem movimento (conferido, sem lançamento)</button>
+           </div>
+         </div>`
+      : "";
+    logList.innerHTML=`<div class="logitem"><span>📄 <a href="${url}" target="_blank">${s.filename}</a></span><span style="color:var(--muted)">${new Date(s.at).toLocaleString('pt-BR')}<br>${s.by||""}</span></div>
+      <div style="margin-top:10px;font-size:13px">Status atual: <b style="color:${stCor}">${stTxt}</b></div>
+      <div class="row" style="justify-content:space-between">
+        <button onclick="removerExtrato()" style="border-color:#7a3a3a;color:#e06464">Remover este extrato</button>
+        ${btnStatus}
+      </div>
+      ${seletor}`;
   }else{
     logList.innerHTML=`<div style="color:var(--muted);font-size:13px">Nenhum envio ainda.</div>`;
   }
