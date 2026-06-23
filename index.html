@@ -68,7 +68,6 @@
   .msg.ok{background:#13351f;color:#4fd17e;display:block}
   #app{display:none}
   .pill{font-size:12px;color:var(--muted);font-family:Arial,sans-serif}
-  .adminbtn{background:#2d3a2d;border-color:#3a5a3a;color:#9fd9a5}
   .usercard{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;font-size:13px}
   .usercard .stt{font-size:11px;padding:2px 8px;border-radius:20px}
   .stt.pend{background:#3a2f1f;color:var(--accent)}
@@ -104,7 +103,6 @@
     <select id="anoSel" onchange="render()"></select>
     <button onclick="exportCSV()">Exportar status (CSV)</button>
     <button onclick="openDownload()">Baixar PDFs do mês</button>
-    <button id="adminBtn" class="adminbtn" style="display:none" onclick="openAdmin()">Gerenciar usuários</button>
     <div class="legend">
       <span><span class="dot ok"></span>Enviado</span>
       <span><span class="dot pen"></span>Pendente</span>
@@ -142,14 +140,6 @@
       <button class="primary" id="dlBtn" onclick="baixarMes()" style="width:100%;padding:11px">Gerar e baixar ZIP</button>
       <div class="msg" id="dlMsg" style="margin-top:14px"></div>
     </div>
-  </div>
-</div>
-
-<!-- MODAL ADMIN -->
-<div class="modal" id="adminModal">
-  <div class="card">
-    <h3><span class="close" onclick="closeAdmin()">×</span>Gerenciar usuários</h3>
-    <div class="body" id="adminBody">Carregando...</div>
   </div>
 </div>
 
@@ -242,41 +232,25 @@ async function checkSession(){
   }
   showApp();
 }
-function showAuth(){authScreen.style.display="flex";app.style.display="none";}
+const EMBUTIDO = new URLSearchParams(location.search).get("app")==="1" || window.self!==window.top;
+function showAuth(){
+  app.style.display="none";
+  if(EMBUTIDO){
+    // dentro do app: não mostra formulário próprio; pede para entrar pelo app
+    authScreen.style.display="flex";
+    document.querySelector("#authScreen .authbox").innerHTML =
+      '<h2>Sessão necessária</h2>'+
+      '<p style="margin-bottom:18px">Para ver os extratos, entre primeiro no aplicativo Garcia Agro. Se você já estava logado, sua sessão pode ter expirado.</p>'+
+      '<button class="primary" style="width:100%;padding:11px" onclick="(window.top||window).location.reload()">Voltar ao app</button>';
+    return;
+  }
+  authScreen.style.display="flex";
+}
 function showApp(){
   authScreen.style.display="none";app.style.display="block";
   whoami.textContent=sessionUser.email;
-  if(isAdmin)adminBtn.style.display="inline-block";
   buildPeriodSelect();
   render();
-}
-
-/* ====== ADMIN: aprovar usuários ====== */
-async function openAdmin(){
-  adminModal.classList.add("on");
-  adminBody.innerHTML="Carregando...";
-  const {data,error}=await sb.from("perfis").select("*").order("created_at",{ascending:false});
-  if(error){adminBody.innerHTML="Erro ao carregar usuários: "+error.message;return;}
-  if(!data||!data.length){adminBody.innerHTML="<p style='color:var(--muted)'>Nenhum usuário cadastrado ainda.</p>";return;}
-  let html="";
-  data.forEach(u=>{
-    const sttClass = u.status==="aprovado"?"apr":u.status==="recusado"?"rej":"pend";
-    const sttTxt = u.status==="aprovado"?"Aprovado":u.status==="recusado"?"Recusado":"Pendente";
-    html+=`<div class="usercard">
-      <div><b>${u.email}</b><br><span class="stt ${sttClass}">${sttTxt}</span></div>
-      <div class="row" style="margin:0">
-        <button onclick="setStatus('${u.id}','aprovado')" style="border-color:#3a5a3a;color:#9fd9a5">Aprovar</button>
-        <button onclick="setStatus('${u.id}','recusado')" style="border-color:#7a3a3a;color:#e06464">Recusar</button>
-      </div></div>`;
-  });
-  adminBody.innerHTML=html;
-}
-function closeAdmin(){adminModal.classList.remove("on");}
-async function setStatus(id,status){
-  const {error}=await sb.from("perfis").update({status}).eq("id",id);
-  if(error){toast("Erro: "+error.message);return;}
-  toast("Usuário "+(status==="aprovado"?"aprovado":"recusado")+".");
-  openAdmin();
 }
 
 /* ====== GRADE ====== */
