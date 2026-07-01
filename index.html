@@ -80,6 +80,11 @@
   .stt.pend{background:#3a2f1f;color:var(--accent)}
   .stt.apr{background:#13351f;color:#4fd17e}
   .stt.rej{background:#3a1f24;color:#e06464}
+  td.cell.mes-destaque{animation:piscaMes 1s ease-in-out 4}
+  th.mes-destaque{animation:piscaMes 1s ease-in-out 4}
+  @keyframes piscaMes{0%,100%{background:var(--head)}50%{background:#5a4a12}}
+  td.cell.mes-destaque{animation:piscaCell 1s ease-in-out 4}
+  @keyframes piscaCell{0%,100%{outline:2px solid transparent;outline-offset:-2px}50%{outline:3px solid var(--accent);outline-offset:-3px}}
 </style>
 </head>
 <body>
@@ -185,6 +190,7 @@ const MESES_SEQ = [];
 })();
 
 let atual=null, statusCache={}, sessionUser=null, isAdmin=false, podeContabilidade=false;
+const MES_DESTAQUE = new URLSearchParams(location.search).get("mes"); // formato: abr-2025
 
 function mcol(ms){return `${ms.nome}-${ms.ano}`;}
 function ckey(idx,ms){return `${idx}__${ms.nome}__${ms.ano}`;}
@@ -278,18 +284,22 @@ function buildPeriodSelect(){anoSel.innerHTML='<option value="0">abr/25 – dez/
 async function render(){
   await loadStatus();
   let html=`<thead><tr><th class="titcol">Titular / Conta</th>`;
-  MESES_SEQ.forEach(ms=>html+=`<th>${ms.nome}/${String(ms.ano).slice(2)}</th>`);
+  MESES_SEQ.forEach(ms=>{
+    const destaque = MES_DESTAQUE && mcol(ms)===MES_DESTAQUE ? " mes-destaque" : "";
+    html+=`<th class="${destaque}" data-mescol="${mcol(ms)}">${ms.nome}/${String(ms.ano).slice(2)}</th>`;
+  });
   html+=`</tr></thead><tbody>`;
   CONTAS.forEach((c,i)=>{
     html+=`<tr><td class="tit"><span class="nome">${c.tit}</span><br><span class="meta">${c.banco} · Ag ${c.ag} · CC ${c.conta}</span></td>`;
     MESES_SEQ.forEach(ms=>{
       const k=ckey(i,ms), s=statusCache[k];
+      const destaque = MES_DESTAQUE && mcol(ms)===MES_DESTAQUE ? " mes-destaque" : "";
       if(s){
         const st = s.status||"enviado";
         const cls = st==="lancado" ? "st-lancado" : st==="sem_movimento" ? "st-sem_movimento" : "ok";
-        html+= `<td class="cell ${cls}" data-k="${k}" data-i="${i}" data-mn="${ms.nome}" data-ma="${ms.ano}"><span class="badge ${cls}">✓</span><span class="fname">${s.filename||""}</span></td>`;
+        html+= `<td class="cell ${cls}${destaque}" data-k="${k}" data-i="${i}" data-mn="${ms.nome}" data-ma="${ms.ano}" data-mescol="${mcol(ms)}"><span class="badge ${cls}">✓</span><span class="fname">${s.filename||""}</span></td>`;
       }else{
-        html+= `<td class="cell" data-k="${k}" data-i="${i}" data-mn="${ms.nome}" data-ma="${ms.ano}"><span class="badge pen">—</span></td>`;
+        html+= `<td class="cell${destaque}" data-k="${k}" data-i="${i}" data-mn="${ms.nome}" data-ma="${ms.ano}" data-mescol="${mcol(ms)}"><span class="badge pen">—</span></td>`;
       }
     });
     html+=`</tr>`;
@@ -297,6 +307,10 @@ async function render(){
   html+=`</tbody>`;
   grid.innerHTML=html;
   bindCells();
+  if(MES_DESTAQUE){
+    const alvo=document.querySelector(`th[data-mescol="${MES_DESTAQUE}"]`);
+    if(alvo)alvo.scrollIntoView({behavior:"smooth",inline:"center",block:"nearest"});
+  }
 }
 function bindCells(){
   document.querySelectorAll("td.cell").forEach(td=>{
